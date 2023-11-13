@@ -286,8 +286,8 @@ def getMarkers_with_mouse():
         key = cv2.waitKey(1)
         if key == ord('q'):
             break
-
-        if len(Rpixel_location) > 2 and len(Lpixel_location) > 2:
+        #get the centre points and the points to ignore
+        if len(Rpixel_location) > 4 and len(Lpixel_location) > 4:
             cv2.destroyWindow("rcam")
             cv2.destroyWindow("lcam")
             break
@@ -344,7 +344,18 @@ def getMarkers_with_mouse():
     Lcentre = (Lframe.shape[:2][1] // 2, Lframe.shape[:2][0] // 2)
     RHtrans = [Rcentre[0] - Rpixel_location[2][0], Rcentre[1] - Rpixel_location[2][1]]
     LHtrans = [Lcentre[0] - Lpixel_location[2][0], Lcentre[1] - Lpixel_location[2][1]]
-    Htranslation = [LHtrans[0] - RHtrans[0], LHtrans[1] - RHtrans[1]]
+
+    #The LHtrans needs to be rotated so that we have pixel locations in Rframe reference
+    cos = np.cos(angle)
+    sin = np.sin(angle)
+
+    R = ([cos, -sin],[sin,  cos])
+    LRot = np.dot(R,  LHtrans)
+    print("Rotation matrix for left frame ")
+    print(R)
+    print("Rotated left frame translation")
+    print(LRot)
+    Htranslation = [LRot[0] - RHtrans[0], LRot[1] - RHtrans[1]]
     print("Right pixel 2:")
     print(Rpixel_location[2])
     print("R Trans: ")
@@ -379,18 +390,20 @@ def getFilters():
 
         Loutput, _ = Lapply_mask(left_first_frame)
         Routput, _ = Rapply_mask(right_first_frame)
-
-        cv2.imshow("Loutput", Loutput)
-        cv2.imshow("Routput", Routput)
+        output = np.concatenate((Loutput, Routput), axis=0)
+        #cv2.imshow("Loutput", Loutput)
+        #cv2.imshow("Routput", Routput)
+        cv2.imshow("filter output", output)
         #print(Lcyan_min)q
         key = cv2.waitKey(1)
         if key == 27:  # Press 'Esc' to exit
             break
         elif key == ord('q'):
-            cv2.destroyWindow("Loutput")
-            cv2.destroyWindow("Routput")
+            #cv2.destroyWindow("Loutput")
+            #cv2.destroyWindow("Routput")
             break
-
+    cv2.destroyAllWindows()
+    cv2.waitKey(1)
 def triangulate_points(P1, P2, points1, points2):
     # Convert image points to homogeneous coordinates
     print("inside tringulate, points1")
@@ -467,6 +480,8 @@ print(P2)
 
 heightScale()
 horizontalScale()
+cv2.namedWindow("Combnined frames", cv2.WINDOW_NORMAL)
+cv2.startWindowThread()
 while True:
     Lret, left  = lcam.read()
     Rret, right = rcam.read()
@@ -482,7 +497,9 @@ while True:
     Routput = bgr_to_cmyk(right)
 
     Loutput, Lmask = Lapply_mask(Loutput)
+    Lmask[Lpixel_location[3][1]:Lpixel_location[4][1], Lpixel_location[3][0]:Lpixel_location[4][0]] = 0
     Routput, Rmask = Rapply_mask(Routput)
+    Rmask[Rpixel_location[3][1]:Rpixel_location[4][1], Rpixel_location[3][0]:Rpixel_location[4][0]] = 0
 
     Lcontours, _ = cv2.findContours(Lmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     Rcontours, _ = cv2.findContours(Rmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -514,14 +531,15 @@ while True:
     print("R centroid")
     print(Rcentroid)
 
-    cv2.circle(Loutput, (int(Lcx), int(Lcy)), 5, (0, 0, 225), -1)
-    cv2.circle(Routput, (int(Rcx), int(Rcy)), 5, (0, 0, 225), -1)
+    cv2.circle(Loutput, (int(Lcx), int(Lcy)), 10, (0, 0, 225), -1)
+    cv2.circle(Routput, (int(Rcx), int(Rcy)), 10, (0, 0, 225), -1)
 
-    frame1 = cv2.resize(Loutput, (0, 0), fx=0.5, fy=0.5)
-    frame2 = cv2.resize(Routput, (0, 0), fx=0.5, fy=0.5)
-
-    combined_frame = cv2.hconcat([frame1, frame2])
+    # frame1 = cv2.resize(Loutput, (0, 0), fx=0.5, fy=0.5)
+    # frame2 = cv2.resize(Routput, (0, 0), fx=0.5, fy=0.5)
+    combined_frame = np.concatenate((Loutput, Routput), axis=1)
+    #combined_frame = cv2.hconcat([frame1, frame2])
     cv2.imshow('Combined Frames', combined_frame)
+    cv2.waitKey(500)
     #P1 is for right, P2 is for left
     points_4d = cv2.triangulatePoints(P1, P2, Rcentroid, Lcentroid)
     points_3d = cv2.convertPointsFromHomogeneous(points_4d.T)
@@ -532,6 +550,9 @@ while True:
     pointsX.append(x_3d * HzScale)
     pointsY.append(y_3d * HzScale)
     pointsZ.append(Rheight - (z_3d * hScale))
+    #now that the centroids are used empty the lists
+    Lcentroids = []
+    Rcentroids = []
 
 
 
